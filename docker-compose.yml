@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: base_project
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  fastapi:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.fastapi
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/fastapi:/app
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/base_project
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  django:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.django
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./backend/django:/app
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/base_project
+      DJANGO_SETTINGS_MODULE: core.settings
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: python manage.py runserver 0.0.0.0:8001
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    depends_on:
+      - fastapi
+    command: npm run dev
+
+volumes:
+  postgres_data:
